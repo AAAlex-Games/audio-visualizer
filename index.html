@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AAAlex Games Visualizer</title>
+    <link rel="icon" href="icon.png">
+    <style>
+        @font-face {
+            font-family: 'AlexGames';
+            src: url('aalexgames.ttf');
+        }
+
+        @font-face {
+            font-family: 'AlexUI';
+            src: url('aaalex-ui.ttf');
+        }
+
+        :root {
+            --accent: #6a90cc;
+            --bg: #050505;
+            --panel: rgba(15, 20, 30, 0.98);
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: white;
+            font-family: 'AlexUI', sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .controls {
+            width: 360px;
+            padding: 20px;
+            background: var(--panel);
+            border-right: 1px solid #334;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        .section-title {
+            font-size: 11px;
+            color: var(--accent);
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 15px 0 10px;
+            border-bottom: 1px solid #334;
+            padding-bottom: 5px;
+        }
+
+        .group {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            font-size: 10px;
+            color: #8aa;
+            margin-bottom: 5px;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #000;
+            border: 1px solid #445;
+            color: white;
+            border-radius: 4px;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+
+        input[type="range"] {
+            padding: 0;
+            height: 8px;
+        }
+
+        .btn-flex {
+            display: flex;
+            gap: 10px;
+        }
+
+        #preview-btn {
+            background: #222;
+            color: white;
+            border: 1px solid #444;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #export-btn {
+            background: var(--accent);
+            color: #fff;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+        }
+
+        .preview-pane {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        canvas {
+            width: 90%;
+            max-width: 1000px;
+            aspect-ratio: 16/9;
+            border: 1px solid #222;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        #status-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #ff4444;
+            padding: 10px 20px;
+            font-family: 'AlexUI', sans-serif;
+            font-weight: bold;
+            border-radius: 5px;
+            display: none;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="controls">
+        <div class="section-title">Files</div>
+        <div class="group">
+            <label>Music</label><input type="file" id="audio-file" accept="audio/*">
+            <label>Disc</label><input type="file" id="center-file" accept="image/*">
+            <label>Background</label><input type="file" id="bg-file" accept="image/*">
+            <label>Sprite Particle</label><input type="file" id="sprite-file" accept="image/*">
+        </div>
+
+        <div class="section-title">Metadata</div>
+        <input type="text" id="t-in" value="TRACK TITLE">
+        <input type="text" id="a-in" value="ARTIST NAME">
+        <input type="text" id="al-in" value="Winter's Awakening OST">
+
+        <div class="section-title">Typography</div>
+        <label>Title Size</label>
+        <input type="range" id="t-size" min="20" max="180" value="85">
+        <label>Font Family</label>
+        <select id="f-custom">
+            <option value="AlexGames">AlexGames</option>
+            <option value="AlexUI">AlexUI</option>
+            <option value="Arial">Arial</option>
+        </select>
+
+        <div class="section-title">Atmosphere</div>
+        <label>Wind Intensity</label>
+        <input type="range" id="wind-speed" min="-10" max="10" step="0.5" value="2.5">
+        <label>Sprite Spacing</label>
+        <input type="range" id="sprite-spacing" min="50" max="800" value="150">
+        <label>Glide Speed</label>
+        <input type="range" id="sprite-speed" min="1" max="15" value="5">
+        <label>Snow Density</label>
+        <input type="range" id="snow-amount" min="0" max="1000" value="400">
+
+        <div class="btn-flex">
+            <button id="preview-btn">PREVIEW</button>
+            <button id="export-btn">EXPORT</button>
+        </div>
+    </div>
+
+    <div class="preview-pane">
+        <div id="status-overlay">● RECORDING...</div>
+        <canvas id="canvas"></canvas>
+        <audio id="player" style="display:none"></audio>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const player = document.getElementById('player');
+        const exportBtn = document.getElementById('export-btn');
+        const previewBtn = document.getElementById('preview-btn');
+        const statusOverlay = document.getElementById('status-overlay'); // Get the new element
+
+        canvas.width = 2560;
+        canvas.height = 1440;
+
+        let audioCtx, analyzer, source, gainNode, recorder;
+        let bgImg = new Image(), spriteImg = new Image(), centerImg = new Image();
+        let renderId;
+
+        const load = (id, obj) => document.getElementById(id).onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => obj.src = ev.target.result;
+            reader.readAsDataURL(e.target.files[0]);
+        };
+        document.getElementById('audio-file').onchange = (e) => player.src = URL.createObjectURL(e.target.files[0]);
+        load('bg-file', bgImg); load('sprite-file', spriteImg); load('center-file', centerImg);
+
+        class Snow {
+            constructor(randomY = true) {
+                this.spawnWidth = canvas.width + 2000;
+                this.x = Math.random() * this.spawnWidth - 1000;
+                this.y = randomY ? Math.random() * canvas.height : -20;
+                this.size = Math.random() * 3 + 1;
+                this.speed = Math.random() * 2 + 1;
+                this.opacity = Math.random() * 0.4 + 0.1;
+            }
+            update(wind) {
+                this.y += this.speed;
+                this.x += wind;
+                if (this.y > canvas.height) {
+                    this.y = -20;
+                    this.x = Math.random() * this.spawnWidth - 1000;
+                }
+                if (this.x > canvas.width + 1000) this.x = -1000;
+                if (this.x < -1000) this.x = canvas.width + 1000;
+            }
+            draw() {
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class Sprite {
+            constructor() { this.reset(true); }
+            reset(isInitial = false) {
+                if (Math.random() > 0.5) {
+                    this.startX = Math.random() * (canvas.width + 800);
+                    this.startY = -400;
+                } else {
+                    this.startX = canvas.width + 400;
+                    this.startY = Math.random() * (canvas.height);
+                }
+                this.travelDist = 3000;
+                this.progress = isInitial ? Math.random() : -(Math.random() * 0.8 + 0.2);
+                this.lifeStep = 0.002 + (Math.random() * 0.003);
+            }
+            update(maxS) {
+                let speedMult = Math.cos(this.progress * (Math.PI / 2));
+                this.progress += (this.lifeStep * maxS * Math.max(0.15, speedMult));
+                this.curX = this.startX - (this.travelDist * this.progress);
+                this.curY = this.startY + (this.travelDist * this.progress);
+                if (this.progress > 1.2 || this.curX < -400 || this.curY > canvas.height + 400) this.reset(false);
+            }
+            draw() {
+                if (spriteImg.src && this.progress > 0 && this.progress < 1) {
+                    ctx.drawImage(spriteImg, this.curX, this.curY);
+                }
+            }
+        }
+
+        let snowflakes = [], sprites = [];
+
+        async function ensureFonts() {
+            const f1 = new FontFace('AlexGames', 'url(aaalexgames.ttf)');
+            const f2 = new FontFace('AlexUI', 'url(aaalex-ui.ttf)');
+            try { await Promise.all([f1.load(), f2.load()]); document.fonts.add(f1); document.fonts.add(f2); } catch (e) { }
+        }
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyzer = audioCtx.createAnalyser();
+            gainNode = audioCtx.createGain();
+            source = audioCtx.createMediaElementSource(player);
+            source.connect(analyzer); analyzer.connect(gainNode); gainNode.connect(audioCtx.destination);
+            analyzer.fftSize = 256;
+        }
+
+        function render() {
+            const fData = new Uint8Array(analyzer.frequencyBinCount);
+            analyzer.getByteFrequencyData(fData);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (bgImg.src) ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+            const wind = parseFloat(document.getElementById('wind-speed').value);
+            const maxS = parseFloat(document.getElementById('sprite-speed').value);
+            snowflakes.forEach(s => { s.update(wind); s.draw(); });
+            sprites.forEach(p => { p.update(maxS); p.draw(); });
+
+            let bs = 0;
+            for (let i = 0; i < 10; i++) bs += fData[i];
+
+            let pulse = (bs / 10 / 255) * 160;
+            const cx = canvas.width / 2, cy = canvas.height / 2, radius = 320 + pulse;
+            const font = document.getElementById('f-custom').value;
+            const tSize = parseInt(document.getElementById('t-size').value) * 1.33;
+
+            ctx.strokeStyle = "#6a90cc"; ctx.lineWidth = 10;
+            for (let i = 0; i < 150; i++) {
+                const v = fData[Math.floor((i / 150) * (fData.length * 0.7))];
+                const angle = (i * Math.PI * 2) / 150;
+                const bH = (v / 255) * 400;
+
+                ctx.beginPath();
+                ctx.moveTo(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
+                ctx.lineTo(cx + Math.cos(angle) * (radius + bH), cy + Math.sin(angle) * (radius + bH));
+                ctx.stroke();
+            }
+
+            if (centerImg.src) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius - 10, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(centerImg, cx - radius, cy - radius, radius * 2, radius * 2);
+                ctx.restore();
+            }
+
+            // Text Rendering
+            ctx.textAlign = "center"; ctx.fillStyle = "#6a90cc";
+            ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 12;
+            ctx.font = `bold ${tSize}px ${font}`;
+            ctx.strokeText(document.getElementById('t-in').value.toUpperCase(), cx, cy - radius - 150);
+            ctx.fillText(document.getElementById('t-in').value.toUpperCase(), cx, cy - radius - 150);
+
+            ctx.font = `italic ${tSize * 0.5}px ${font}`;
+            let sub = `${document.getElementById('a-in').value} — ${document.getElementById('al-in').value}`;
+            ctx.strokeText(sub, cx, cy + radius + 200);
+            ctx.fillText(sub, cx, cy + radius + 200);
+
+            renderId = requestAnimationFrame(render);
+        }
+
+        const startSystem = async () => {
+            cancelAnimationFrame(renderId);
+            await ensureFonts();
+            initAudio();
+            snowflakes = []; sprites = [];
+            const sAmount = parseInt(document.getElementById('snow-amount').value);
+            for (let i = 0; i < sAmount; i++) snowflakes.push(new Snow(true));
+            for (let i = 0; i < 10; i++) sprites.push(new Sprite());
+            player.currentTime = 0;
+            player.play();
+            render();
+        }
+
+        previewBtn.onclick = () => {
+            isExporting = false;
+            startSystem();
+        };
+
+        exportBtn.onclick = async () => {
+            isExporting = true;
+            await startSystem();
+
+            const stream = canvas.captureStream(60);
+            const audioStream = player.captureStream ? player.captureStream() : player.mozCaptureStream();
+            const combined = new MediaStream([...stream.getVideoTracks(), ...audioStream.getAudioTracks()]);
+
+            recorder = new MediaRecorder(combined, {
+                mimeType: 'video/webm;codecs=vp9',
+                videoBitsPerSecond: 50000000
+            });
+
+            let chunks = [];
+            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            recorder.onstop = () => {
+                isExporting = false;
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const artist = document.getElementById('a-in').value.replace(/[/\\?%*:|"<>]/g, '-');
+                const title = document.getElementById('t-in').value.replace(/[/\\?%*:|"<>]/g, '-');
+                a.href = url;
+                a.download = `${artist} - ${title} (1440p).webm`;
+                a.click();
+            };
+
+            recorder.start();
+            player.onended = () => {
+                recorder.stop();
+                cancelAnimationFrame(renderId);
+            };
+        };
+    </script>
+</body>
+
+</html>

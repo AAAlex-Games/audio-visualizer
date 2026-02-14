@@ -38,6 +38,7 @@
         .btn-flex { display: flex; gap: 10px; }
         #preview-btn { background: #222; cursor: pointer; font-weight: bold; }
         #export-btn { background: var(--accent); font-weight: bold; border: none; cursor: pointer; }
+        #reset-btn { background: #333; font-size: 11px; margin-top: 5px; cursor: pointer; }
 
         .preview-pane { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #000; position: relative; }
         canvas { width: 90%; max-width: 1000px; aspect-ratio: 16/9; border: 1px solid #222; }
@@ -56,15 +57,26 @@
                 <input type="file" id="audio-file" accept="audio/*">
                 <button class="clear-btn" onclick="clearAudio()">CLEAR</button>
             </div>
-            <label>Disc</label>
-            <div class="file-row">
-                <input type="file" id="center-file" accept="image/*">
-                <button class="clear-btn" onclick="clearImage('center-file', centerImg)">CLEAR</button>
-            </div>
             <label>Background</label>
             <div class="file-row">
                 <input type="file" id="bg-file" accept="image/*">
                 <button class="clear-btn" onclick="clearImage('bg-file', bgImg)">CLEAR</button>
+            </div>
+            <label>Scroll Direction</label>
+            <select id="bg-scroll-dir">
+                <option value="none">None</option>
+                <option value="up">Up</option>
+                <option value="down">Down</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+            </select>
+            <label>Scroll Speed</label>
+            <input type="range" id="bg-scroll-speed" min="0" max="20" value="2">
+            
+            <label>Disc</label>
+            <div class="file-row">
+                <input type="file" id="center-file" accept="image/*">
+                <button class="clear-btn" onclick="clearImage('center-file', centerImg)">CLEAR</button>
             </div>
             <label>Sprite Particle</label>
             <div class="file-row">
@@ -75,15 +87,15 @@
 
         <div class="section-title">Positioning</div>
         <div class="group">
-            <label>Visualizer X (Left/Right)</label>
+            <label>Visualizer X</label>
             <input type="range" id="viz-x" min="0" max="2560" value="1280">
-            <label>Visualizer Y (Down/Up)</label>
+            <label>Visualizer Y</label>
             <input type="range" id="viz-y" min="0" max="1440" value="720">
-            
-            <label>Text Group X (Left/Right)</label>
+            <label>Text Group X</label>
             <input type="range" id="txt-x" min="0" max="2560" value="1280">
-            <label>Text Group Y (Down/Up)</label>
+            <label>Text Group Y</label>
             <input type="range" id="txt-y" min="0" max="1440" value="720">
+            <button id="reset-btn" onclick="resetAnimations()">RESET ANIMATION POSITIONS</button>
         </div>
 
         <div class="section-title">Metadata & Theme</div>
@@ -123,6 +135,12 @@
 
         <div class="section-title">Visualizer</div>
         <div class="group">
+            <div class="toggle-group">
+                <input type="checkbox" id="enable-disc-rot" checked>
+                <label style="margin:0">Enable Disc Rotation</label>
+            </div>
+            <label>Disc Rotation Speed</label>
+            <input type="range" id="disc-rot-speed" min="-10" max="10" step="0.5" value="2">
             <label>Bar Count</label>
             <input type="range" id="bar-count" min="10" max="300" value="150">
             <label>Bar Thickness</label>
@@ -131,6 +149,14 @@
 
         <div class="section-title">Atmosphere</div>
         <div class="group">
+            <div class="toggle-group">
+                <input type="checkbox" id="show-particles" checked>
+                <label style="margin:0">Show Particles</label>
+            </div>
+            <div class="toggle-group">
+                <input type="checkbox" id="show-sprites" checked>
+                <label style="margin:0">Show Sprites</label>
+            </div>
             <label>Particle Color</label>
             <input type="color" id="snow-color" value="#ffffff">
             <label>Particle Size</label>
@@ -141,8 +167,6 @@
             <input type="range" id="sprite-scale" min="0.1" max="2.0" step="0.1" value="1.0">
             <label>Sprite Travel (Deg)</label>
             <input type="text" id="sprite-deg" value="45">
-            <label>Sprite Image Rotation (Deg)</label>
-            <input type="text" id="sprite-rot" value="0">
             <label>Glide Speed</label>
             <input type="range" id="sprite-speed" min="1" max="15" value="5">
         </div>
@@ -170,10 +194,18 @@
         let bgImg = new Image(), spriteImg = new Image(), centerImg = new Image();
         let renderId;
         let particles = [], sprites = [];
+        let bgOffsetX = 0, bgOffsetY = 0;
+        let discRotation = 0;
 
         volControl.oninput = () => { if(gainNode) gainNode.gain.value = volControl.value; };
         function clearAudio() { document.getElementById('audio-file').value = ""; player.pause(); player.src = ""; cancelAnimationFrame(renderId); }
         function clearImage(id, obj) { document.getElementById(id).value = ""; obj.src = ""; }
+
+        function resetAnimations() {
+            bgOffsetX = 0;
+            bgOffsetY = 0;
+            discRotation = 0;
+        }
 
         function toggleCustomFont() {
             const select = document.getElementById('font-select');
@@ -238,10 +270,8 @@
             draw() {
                 if (!spriteImg.src || this.progress < 0) return;
                 const scale = parseFloat(document.getElementById('sprite-scale').value);
-                const imgRot = (parseFloat(document.getElementById('sprite-rot').value) || 0) * Math.PI / 180;
                 ctx.save();
                 ctx.translate(this.curX, this.curY);
-                ctx.rotate(imgRot);
                 ctx.drawImage(spriteImg, -(spriteImg.width * scale)/2, -(spriteImg.height * scale)/2, spriteImg.width * scale, spriteImg.height * scale);
                 ctx.restore();
             }
@@ -263,7 +293,24 @@
             if (analyzer) analyzer.getByteFrequencyData(fData);
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (bgImg.src) ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+            if (bgImg.src) {
+                const dir = document.getElementById('bg-scroll-dir').value;
+                const speed = parseFloat(document.getElementById('bg-scroll-speed').value);
+                if(dir === 'up') bgOffsetY -= speed;
+                if(dir === 'down') bgOffsetY += speed;
+                if(dir === 'left') bgOffsetX -= speed;
+                if(dir === 'right') bgOffsetX += speed;
+
+                bgOffsetX %= canvas.width;
+                bgOffsetY %= canvas.height;
+
+                for (let x = -1; x <= 1; x++) {
+                    for (let y = -1; y <= 1; y++) {
+                        ctx.drawImage(bgImg, bgOffsetX + (x * canvas.width), bgOffsetY + (y * canvas.height), canvas.width, canvas.height);
+                    }
+                }
+            }
 
             const vX = parseInt(document.getElementById('viz-x').value);
             const vY = 1440 - parseInt(document.getElementById('viz-y').value);
@@ -276,8 +323,12 @@
             const titleFontSize = parseInt(document.getElementById('title-size').value);
             const subFontSize = parseInt(document.getElementById('sub-size').value);
 
-            particles.forEach(p => { p.update(); p.draw(document.getElementById('snow-color').value, document.getElementById('snow-size').value); });
-            sprites.forEach(s => { s.update(parseFloat(document.getElementById('sprite-speed').value)); s.draw(); });
+            if (document.getElementById('show-particles').checked) {
+                particles.forEach(p => { p.update(); p.draw(document.getElementById('snow-color').value, document.getElementById('snow-size').value); });
+            }
+            if (document.getElementById('show-sprites').checked) {
+                sprites.forEach(s => { s.update(parseFloat(document.getElementById('sprite-speed').value)); s.draw(); });
+            }
 
             let bs = 0; if (analyzer) for (let i = 0; i < 10; i++) bs += fData[i];
             let bassFactor = (bs / 10 / 255);
@@ -300,9 +351,15 @@
             }
 
             if (centerImg.src) {
+                if (document.getElementById('enable-disc-rot').checked) {
+                    const rotSpeed = parseFloat(document.getElementById('disc-rot-speed').value);
+                    discRotation += (rotSpeed * 0.01);
+                }
                 ctx.save();
-                ctx.beginPath(); ctx.arc(vX, vY, radius - 10, 0, Math.PI * 2); ctx.clip();
-                ctx.drawImage(centerImg, vX - radius, vY - radius, radius * 2, radius * 2);
+                ctx.translate(vX, vY);
+                ctx.rotate(discRotation);
+                ctx.beginPath(); ctx.arc(0, 0, radius - 10, 0, Math.PI * 2); ctx.clip();
+                ctx.drawImage(centerImg, -radius, -radius, radius * 2, radius * 2);
                 ctx.restore();
             }
 

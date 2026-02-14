@@ -334,9 +334,11 @@
             <label>Particle Size</label>
             <input type="range" id="snow-size" min="1" max="10" value="3">
             <label>Particle Density</label>
-            <input type="range" id="snow-amount" min="0" max="1000" value="400">
+            <input type="range" id="snow-amount" min="0" max="5000" value="1500">
             <label>Wind Strength</label>
-            <input type="range" id="wind-strength" min="-20" max="20" value="0">
+            <input type="range" id="wind-strength" min="0" max="50" value="10">
+            <label>Wind Direction (Deg)</label>
+            <input type="range" id="wind-angle" min="0" max="360" value="90">
             <label>Sprite Scale</label>
             <input type="range" id="sprite-scale" min="0.1" max="2.0" step="0.1" value="1.0">
             <label>Sprite Travel (Deg)</label>
@@ -445,22 +447,35 @@
             constructor() { this.reset(true); }
             reset(init) {
                 this.x = Math.random() * 6000 - 1720;
-                this.y = init ? Math.random() * canvas.height : -50;
-                this.speed = Math.random() * 2 + 1;
+                this.y = init ? Math.random() * canvas.height : -100;
+                this.baseSpeed = Math.random() * 2 + 1;
                 this.opacity = Math.random() * 0.5 + 0.2;
             }
             update() {
-                const wind = parseFloat(document.getElementById('wind-strength').value) || 0;
-                this.y += this.speed;
-                this.x += (wind * 0.5);
+                const strength = parseFloat(document.getElementById('wind-strength').value) || 0;
+                const angleDeg = parseFloat(document.getElementById('wind-angle').value) || 90;
+                const rad = angleDeg * Math.PI / 180;
 
-                if (this.y > canvas.height + 50 || this.x > 4280 || this.x < -1720) {
+                const vx = Math.cos(rad) * strength;
+                const vy = Math.sin(rad) * strength + this.baseSpeed;
+
+                this.x += vx;
+                this.y += vy;
+
+                if (this.y > canvas.height + 200 || this.y < -200 ||
+                    this.x > 4280 || this.x < -1720) {
                     this.reset(false);
+
+                    if (vy < 0) this.y = canvas.height + 50;
+                    else if (vy > 0) this.y = -50;
                 }
             }
             draw(color, size) {
-                ctx.fillStyle = color; ctx.globalAlpha = this.opacity;
-                ctx.beginPath(); ctx.arc(this.x, this.y, size, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = color;
+                ctx.globalAlpha = this.opacity;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
+                ctx.fill();
                 ctx.globalAlpha = 1.0;
             }
         }
